@@ -2,9 +2,6 @@ name: Android emulator smoke and diagnostics
 # Validate v0.8 complete offline OCR path, not just app launch.
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/android-emulator-smoke.yml'
 concurrency:
   group: visionlab-android-emulator-${{ github.ref }}
   cancel-in-progress: true
