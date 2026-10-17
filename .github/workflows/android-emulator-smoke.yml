@@ -2,6 +2,9 @@ name: Android emulator smoke and diagnostics
 # Validate v0.8 complete offline OCR path, not just app launch.
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/android-emulator-smoke.yml'
 concurrency:
   group: visionlab-android-emulator-${{ github.ref }}
   cancel-in-progress: true
@@ -36,8 +39,8 @@ jobs:
           api-level: 30
           arch: x86_64
           profile: pixel_2
-          target: google_apis
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          target: default # Bare AOSP avoids unnecessary Google YouTube/Play Services ANR
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-load -no-snapshot-save
           disable-animations: true
           script: bash .github/scripts/android-emulator-smoke.sh
       - uses: actions/upload-artifact@v4
