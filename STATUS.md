@@ -1,4 +1,16 @@
 # KATARINA AI — 2Captcha Worker Release Gate
+
+## RILIS OCR RINGAN: APK VISION LAB v0.8 SIAP UJI PADA HP
+- [x] Android v0.8.0 build berhasil: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39041115339
+- [x] Android emulator AOSP API 30 berhasil start dan mengenali gambar TEST tepat via ML Kit offline: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39042115492
+- [x] Cloudflare live OCR mengembalikan hasil tepat TEST: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39040212827
+- [x] Tes backend dan simulasi: 24/24 lulus.
+- [x] Workflow emulator berat dikembalikan ke mode manual.
+- [ ] Pemasangan pada HP fisik dan akurasi gambar nyata belum diverifikasi.
+- [ ] Tidak ada pengambilan/submit Worker 2Captcha otomatis.
+
+**GO** untuk pengujian OCR gambar sederhana pada APK. **NO-GO** untuk rilis Worker otomatis dan klaim pendapatan. Baca `ANDROID_V0.8_RELEASE_NOTES.md`.
+
 Updated: 2026-10-17
 
 ## VERIFIED ACCEPTANCE TESTS (simulated Worker + real Cloudflare)
