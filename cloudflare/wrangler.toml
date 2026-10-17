@@ -1,0 +1,6 @@
+name = "katarina-vision-lab"
+main = "src/index.mjs"
+compatibility_date = "2026-09-01"
+[ai]
+binding = "AI"
+# Add secret using: npx wrangler secret put APP_DEVICE_KEY
