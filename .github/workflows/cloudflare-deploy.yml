@@ -39,7 +39,7 @@ jobs:
       - name: Provision/reuse private Cloudflare KV diagnostic namespace
         run: |
           node <<'NODE'
-          const fs=require('node:fs');
+          const fs=await import('node:fs');
           const token=process.env.CLOUDFLARE_API_TOKEN;
           const account=process.env.CLOUDFLARE_ACCOUNT_ID;
           const base='https://api.cloudflare.com/client/v4/accounts/'+account+'/storage/kv/namespaces';
