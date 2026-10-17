@@ -1,6 +1,9 @@
 name: Deploy Cloudflare Vision Worker
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cloudflare-deploy.yml'
 concurrency:
   group: visionlab-cloudflare-deploy
   cancel-in-progress: false
@@ -71,5 +74,5 @@ jobs:
           const response=await fetch('https://katarina-vision-lab.alfaaulia8.workers.dev/health',{signal:AbortSignal.timeout(15000)});
           const data=await response.json();
           console.log('HEALTH_HTTP',response.status,'VERSION',data.version,'DIAGNOSTICS_BOUND',data.diagnostics);
-          if(response.status!==200||!data.diagnostics||data.version!=='0.6.0')process.exitCode=1;
+          if(response.status!==200||!data.diagnostics||data.version!=='0.7.0'||!data.pairing)process.exitCode=1;
           NODE

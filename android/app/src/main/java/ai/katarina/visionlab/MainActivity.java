@@ -3,6 +3,9 @@ package ai.katarina.visionlab;
 import android.app.Activity;
 import android.os.Bundle;
 import android.content.Intent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
@@ -42,6 +45,8 @@ public final class MainActivity extends Activity {
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private Bitmap bitmap;
     private Diagnostics diagnostics;
+    private PairingHelper pairing;
+    private TextView pairingCodeText;
     private ImageView preview;
     private TextView status, result;
     private EditText urlInput, keyInput, expectedInput;
@@ -69,6 +74,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         diagnostics=new Diagnostics(this);
+        pairing=new PairingHelper(this);
         diagnostics.installCrashRecorder();
         diagnostics.record("APP_OPEN");
         diagnostics.flushAsync();
@@ -76,7 +82,7 @@ public final class MainActivity extends Activity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18),dp(24),dp(18),dp(24));scroll.addView(root);
         TextView title=label("KATARINA / VISION LAB",23);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.6)",13));
+        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.7)",13));
         root.addView(label("Uji hanya gambar yang kamu miliki atau punya izin. Integrasi ini tidak mengakses akun Worker tanpa kamu login langsung di situs resmi.",13));
         root.addView(label("Akun Worker 2Captcha",19));
         button(root,"Masuk akun 2Captcha (resmi)",()->openOfficial2Captcha(CAPTCHA_LOGIN,"WORKER_LOGIN_OPENED"));
@@ -95,9 +101,17 @@ public final class MainActivity extends Activity {
         button(root,"Baca teks lokal (offline)",()->runOcr(false));
         button(root,"Hybrid (lokal lalu AI bila perlu)",()->runOcr(true));
         button(root,"Coba AI Cloudflare",this::cloudOcr);
+        root.addView(label("Hubungkan Cloudflare tanpa Device Key",19));
+        pairingCodeText=label("Kode pairing: "+(pairing.pendingCode().isEmpty()?"belum dibuat":pairing.pendingCode()),18);
+        pairingCodeText.setTypeface(null,Typeface.BOLD);
+        root.addView(pairingCodeText);
+        root.addView(label("1. Tekan Buat Kode. 2. Salin kode dan kirim ke chat Katarina agar disetujui. 3. Tekan Selesaikan Koneksi. Tidak perlu tahu Device Key lama.",12));
+        button(root,"Buat kode pairing",this::beginPairing);
+        button(root,"Salin kode pairing",this::copyPairCode);
+        button(root,"Selesaikan koneksi",this::finishPairing);
         root.addView(label("Pengaturan Cloudflare",19));
         urlInput=field(root,"https://your-worker.workers.dev");
-        keyInput=field(root,"Device Key khusus Cloudflare (bukan 2Captcha Client Key)");
+        keyInput=field(root,"Opsional: Device Key lama (tidak diperlukan jika pairing)");
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         expectedInput=field(root,"Panjang teks yang diharapkan, 0 = bebas");
         expectedInput.setInputType(InputType.TYPE_CLASS_NUMBER);
@@ -286,6 +300,48 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void beginPairing(){
+        message("Membuat pairing terenkripsi...");
+        executor.execute(()->{
+            try{
+                String code=pairing.begin();
+                diagnostics.record("PAIR_START_SUCCESS");
+                runOnUiThread(()->{
+                    pairingCodeText.setText("Kode pairing: "+code);
+                    message("Kirim kode "+code+" ke chat Katarina untuk disetujui.");
+                });
+            }catch(Exception e){
+                diagnostics.record("PAIR_START_FAILED");
+                runOnUiThread(()->message("Pairing gagal: "+e.getClass().getSimpleName()));
+            }
+        });
+    }
+    private void copyPairCode(){
+        String code=pairing.pendingCode();
+        if(code.isEmpty()){message("Buat kode pairing terlebih dahulu");return;}
+        ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+        if(manager!=null){
+            manager.setPrimaryClip(ClipData.newPlainText("Katarina pairing code",code));
+            message("Kode pairing tersalin. Kirim ke chat untuk persetujuan.");
+        }
+    }
+    private void finishPairing(){
+        message("Memeriksa persetujuan pairing...");
+        executor.execute(()->{
+            try{
+                String info=pairing.finish();
+                diagnostics.record("PAIR_CHECK_SUCCESS");
+                runOnUiThread(()->{
+                    pairingCodeText.setText("Kode pairing: "+(pairing.pendingCode().isEmpty()?"tersambung":pairing.pendingCode()));
+                    message(info);
+                });
+                diagnostics.flushAsync();
+            }catch(Exception e){
+                diagnostics.record("PAIR_CHECK_FAILED");
+                runOnUiThread(()->message("Pairing belum selesai: "+e.getClass().getSimpleName()));
+            }
+        });
+    }
     private void shareReport(){
         diagnostics.record("REPORT_SHARED_BY_USER");
         Intent send=new Intent(Intent.ACTION_SEND);

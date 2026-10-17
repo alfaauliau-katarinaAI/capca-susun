@@ -1,0 +1,49 @@
+name: Katarina Approve Phone Pairing
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: 'Pairing code shown by Katarina Android (not a secret)'
+        required: true
+        type: string
+  push:
+    paths:
+      - '.github/pairing/approval-code.txt'
+concurrency:
+  group: katarina-pairing-approval
+  cancel-in-progress: false
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      KATARINA_DEVICE_KEY: ${{ secrets.KATARINA_DEVICE_KEY }}
+      PAIRING_CODE_INPUT: ${{ inputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Approve a pairing request without exposing secrets
+        run: |
+          node <<'NODE'
+          const crypto=await import('node:crypto');
+          const fs=await import('node:fs');
+          const raw=process.env.PAIRING_CODE_INPUT||fs.readFileSync('.github/pairing/approval-code.txt','utf8');
+          const code=raw.trim().replaceAll('-','').toUpperCase();
+          if(!/^[A-HJ-NP-Z2-9]{12}$/.test(code))throw new Error('Invalid pairing code');
+          const key=process.env.KATARINA_DEVICE_KEY;
+          if(!key||key.length<24)throw new Error('Missing GitHub Device Key');
+          const admin=crypto.createHmac('sha256',key).update('katarina-diagnostics-admin-v1').digest('hex');
+          const res=await fetch('https://katarina-vision-lab.alfaaulia8.workers.dev/v1/pair/approve',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','X-Katarina-Admin-Key':admin},
+            body:JSON.stringify({code}),signal:AbortSignal.timeout(12000)
+          });
+          const body=await res.json().catch(()=>({}));
+          console.log('PAIRING_APPROVAL_HTTP',res.status,'STATUS',body.status||body.error||'unknown');
+          if(res.status!==200||body.status!=='approved')throw new Error('Pairing code expired or Cloudflare rejected approval');
+          console.log('PAIRING_APPROVED_FOR_USER_OWNED_ANDROID_DEVICE');
+          NODE

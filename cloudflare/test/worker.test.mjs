@@ -8,7 +8,7 @@ const IMAGE='data:image/png;base64,'+PNG;
 const req=(path,body,key=KEY)=>new Request('https://example.test'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Katarina-Key':key},body:JSON.stringify(body)});
 const stored=new Map();
 const KV={
-  put:async(key,val,options)=>{assert.equal(options.expirationTtl,7*24*60*60);stored.set(key,JSON.parse(val));},
+  put:async(key,val,options)=>{if(key.startsWith('diag:'))assert.equal(options.expirationTtl,7*24*60*60);stored.set(key,JSON.parse(val));},
   get:async(key)=>stored.get(key)||null,
   list:async()=>({keys:[...stored.keys()].map(name=>({name})),list_complete:true})
 };
@@ -63,3 +63,28 @@ test('admin diagnostic summary is authenticated, aggregated and anonymous',async
   assert.ok(!JSON.stringify(data).includes('created_at'));
 });
 test('telemetry does not accept GET',async()=>assert.equal((await worker.fetch(new Request('https://example.test/v1/telemetry'),env)).status,405));
+
+
+test('pairing request, approval, claim and device OCR token work end to end',async()=>{
+  // Actual RSA-OAEP encryption in workers runtime and decryption with matching private key
+  stored.clear();
+  const kp=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-1'},true,['encrypt','decrypt']);
+  const exported=Buffer.from(await crypto.subtle.exportKey('spki',kp.publicKey)).toString('base64');
+  const pair=await worker.fetch(req('/v1/pair/start',{public_key:exported}),env);
+  assert.equal(pair.status,200);
+  const begun=await pair.json();
+  assert.match(begun.code,/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+  assert.equal((await worker.fetch(req('/v1/pair/claim',{code:begun.code,claim:begun.claim}),env)).status,202);
+  const noAdmin=await worker.fetch(req('/v1/pair/approve',{code:begun.code}),env);
+  assert.equal(noAdmin.status,401);
+  const adminApproval=await worker.fetch(new Request('https://example.test/v1/pair/approve',{method:'POST',headers:{'Content-Type':'application/json','X-Katarina-Admin-Key':ADMIN},body:JSON.stringify({code:begun.code})}),env);
+  assert.equal(adminApproval.status,200);
+  const claimed=await worker.fetch(req('/v1/pair/claim',{code:begun.code,claim:begun.claim}),env);
+  assert.equal(claimed.status,200);
+  const cryptic=(await claimed.json()).encrypted_token;
+  const token=new TextDecoder().decode(await crypto.subtle.decrypt({name:'RSA-OAEP'},kp.privateKey,Buffer.from(cryptic,'base64')));
+  assert.ok(token.length>=30);
+  const recognized=await worker.fetch(req('/v1/ocr',{image:IMAGE},token),env);
+  assert.equal(recognized.status,200);
+  assert.equal((await recognized.json()).text,'TEST42');
+});

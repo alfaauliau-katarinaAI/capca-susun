@@ -7,6 +7,9 @@ const MAX_IMAGE_BYTES=350000;
 const MAX_JSON_BYTES=520000;
 const MAX_DIAG_BODY=4096;
 const TTL_SECONDS=7*24*60*60;
+const PAIR_TTL=10*60;
+const CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const utf8=new TextEncoder();
 const HEADERS={'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'};
 const out=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:HEADERS});
 const validCode=(v)=>typeof v==='string'&&/^[A-Z][A-Z0-9_]{1,55}$/.test(v);
@@ -29,6 +32,86 @@ function authorized(request,secret,header='x-katarina-key'){
   let diff=0;for(let i=0;i<got.length;i++)diff|=got.charCodeAt(i)^secret.charCodeAt(i);
   return diff===0;
 }
+
+const toBase64=(bytes)=>btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const fromBase64=(str)=>Uint8Array.from(atob(str),c=>c.charCodeAt(0));
+const toHex=(bytes)=>[...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('');
+const digest=async(value)=>toHex(await crypto.subtle.digest('SHA-256',utf8.encode(value)));
+const randomText=(n=32)=>toBase64(crypto.getRandomValues(new Uint8Array(n))).replace(/[+/=]/g,'').slice(0,n+8);
+function pairingCode(){
+  const bytes=crypto.getRandomValues(new Uint8Array(12));
+  return [...bytes].map(x=>CODE_CHARS[x%CODE_CHARS.length]).join('');
+}
+function normalizeCode(value){
+  const c=String(value||'').replaceAll('-','').trim().toUpperCase();
+  return /^[A-HJ-NP-Z2-9]{12}$/.test(c)?c:null;
+}
+async function isUserAuthorized(request,env){
+  if(authorized(request,env.APP_DEVICE_KEY))return true; // backward compatible
+  if(!env.DIAGNOSTICS||typeof env.DIAGNOSTICS.get!=='function')return false;
+  const raw=request.headers.get('x-katarina-key')||'';
+  if(!/^[a-zA-Z0-9_-]{30,96}$/.test(raw))return false;
+  try{
+    const key='device:'+await digest(raw);
+    return !!(await env.DIAGNOSTICS.get(key));
+  }catch{return false;}
+}
+async function startPair(request,env){
+  if(!env.DIAGNOSTICS?.put)return out({error:'pairing_unavailable'},503);
+  const json=await getJson(request,1800);
+  if(json.error)return out({error:json.error},json.status);
+  const base64=json.data?.public_key;
+  if(typeof base64!=='string'||base64.length<300||base64.length>750||!/^[A-Za-z0-9+/]+=*$/.test(base64))
+    return out({error:'invalid_public_key'},400);
+  try{
+    const imported=await crypto.subtle.importKey('spki',fromBase64(base64),
+      {name:'RSA-OAEP',hash:'SHA-1'},false,['encrypt']);
+    if(imported.algorithm.modulusLength!==2048)return out({error:'invalid_key_length'},400);
+    const code=pairingCode();
+    const claim=randomText(32);
+    await env.DIAGNOSTICS.put('pair:'+code,JSON.stringify({
+      status:'pending',public_key:base64,claim_hash:await digest(claim)
+    }),{expirationTtl:PAIR_TTL});
+    return out({ok:true,code:code.match(/.{1,4}/g).join('-'),claim,expires_seconds:PAIR_TTL});
+  }catch{return out({error:'pairing_unavailable'},503);}
+}
+async function approvePair(request,env){
+  if(!authorized(request,env.DIAG_ADMIN_KEY,'x-katarina-admin-key'))return out({error:'unauthorized'},401);
+  const json=await getJson(request,500);
+  if(json.error)return out({error:json.error},json.status);
+  const code=normalizeCode(json.data?.code);
+  if(!code)return out({error:'invalid_code'},400);
+  if(!env.DIAGNOSTICS?.get||!env.DIAGNOSTICS?.put)return out({error:'pairing_unavailable'},503);
+  try{
+    const record=await env.DIAGNOSTICS.get('pair:'+code,'json');
+    if(!record||record.status!=='pending')return out({error:'code_expired_or_used'},404);
+    const publicKey=await crypto.subtle.importKey('spki',fromBase64(record.public_key),
+      {name:'RSA-OAEP',hash:'SHA-1'},false,['encrypt']);
+    const token=randomText(32);
+    const ciphertext=toBase64(await crypto.subtle.encrypt({name:'RSA-OAEP'},publicKey,utf8.encode(token)));
+    await env.DIAGNOSTICS.put('device:'+await digest(token),JSON.stringify({issued_at:new Date().toISOString()}));
+    await env.DIAGNOSTICS.put('pair:'+code,JSON.stringify({
+      status:'approved',claim_hash:record.claim_hash,encrypted_token:ciphertext
+    }),{expirationTtl:PAIR_TTL});
+    return out({ok:true,status:'approved'});
+  }catch{return out({error:'pairing_unavailable'},503);}
+}
+async function claimPair(request,env){
+  const json=await getJson(request,500);
+  if(json.error)return out({error:json.error},json.status);
+  const code=normalizeCode(json.data?.code),claim=json.data?.claim;
+  if(!code||typeof claim!=='string'||claim.length<30||claim.length>80)return out({error:'invalid_claim'},400);
+  if(!env.DIAGNOSTICS?.get)return out({error:'pairing_unavailable'},503);
+  try{
+    const record=await env.DIAGNOSTICS.get('pair:'+code,'json');
+    if(!record)return out({error:'expired'},410);
+    if(record.claim_hash!==await digest(claim))return out({error:'invalid_claim'},403);
+    if(record.status==='pending')return out({ok:true,status:'pending'},202);
+    if(record.status!=='approved')return out({error:'invalid_claim'},403);
+    // The private RSA key never leaves the Android Keystore.
+    return out({ok:true,status:'approved',encrypted_token:record.encrypted_token});
+  }catch{return out({error:'pairing_unavailable'},503);}
+}
 async function getJson(request,maxBytes){
   if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/json'))
     return {error:'json_required',status:415};
@@ -45,7 +128,7 @@ function validDiagnostic(body){
   return body.events.every(validCode);
 }
 async function submitDiagnostic(request,env){
-  if(!authorized(request,env.APP_DEVICE_KEY))return out({error:'unauthorized'},401);
+  if(!(await isUserAuthorized(request,env)))return out({error:'unauthorized'},401);
   if(!env.DIAGNOSTICS||typeof env.DIAGNOSTICS.put!=='function')return out({error:'diagnostics_not_configured'},503);
   const decoded=await getJson(request,MAX_DIAG_BODY);
   if(decoded.error)return out({error:decoded.error},decoded.status);
@@ -84,7 +167,7 @@ async function summaryDiagnostics(request,env){
   }catch{return out({error:'diagnostics_read_unavailable'},503);}
 }
 async function inferImage(request,env){
-  if(!authorized(request,env.APP_DEVICE_KEY))return out({error:'unauthorized'},401);
+  if(!(await isUserAuthorized(request,env)))return out({error:'unauthorized'},401);
   const decoded=await getJson(request,MAX_JSON_BYTES);
   if(decoded.error)return out({error:decoded.error},decoded.status);
   const image=parseDataUrl(decoded.data?.image);
@@ -113,11 +196,14 @@ export default {
   async fetch(request,env){
     const pathname=new URL(request.url).pathname;
     if(pathname==='/health'&&request.method==='GET')
-      return out({ok:true,version:'0.6.0',platform:'cloudflare',model:MODEL,diagnostics:!!env.DIAGNOSTICS});
+      return out({ok:true,version:'0.7.0',platform:'cloudflare',model:MODEL,diagnostics:!!env.DIAGNOSTICS,pairing:!!env.DIAGNOSTICS});
+    if(pathname==='/v1/pair/start'&&request.method==='POST')return startPair(request,env);
+    if(pathname==='/v1/pair/approve'&&request.method==='POST')return approvePair(request,env);
+    if(pathname==='/v1/pair/claim'&&request.method==='POST')return claimPair(request,env);
     if(pathname==='/v1/telemetry'&&request.method==='POST')return submitDiagnostic(request,env);
     if(pathname==='/v1/diagnostics-summary'&&request.method==='GET')return summaryDiagnostics(request,env);
     if(pathname==='/v1/ocr'&&request.method==='POST')return inferImage(request,env);
-    if(['/v1/telemetry','/v1/diagnostics-summary','/v1/ocr'].includes(pathname))return out({error:'method_not_allowed'},405);
+    if(['/v1/telemetry','/v1/diagnostics-summary','/v1/ocr','/v1/pair/start','/v1/pair/approve','/v1/pair/claim'].includes(pathname))return out({error:'method_not_allowed'},405);
     return out({error:'not_found'},404);
   }
 };
