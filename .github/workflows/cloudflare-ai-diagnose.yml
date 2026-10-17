@@ -1,0 +1,29 @@
+name: Diagnose Cloudflare AI Access
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cloudflare-ai-diagnose.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Query AI model without accepting license
+        run: |
+          node <<'JS'
+          const token=process.env.CLOUDFLARE_API_TOKEN;
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          if(!token||!account)throw new Error('Missing Cloudflare secrets');
+          const url='https://api.cloudflare.com/client/v4/accounts/'+account+'/ai/run/@cf/meta/llama-3.2-11b-vision-instruct';
+          const resp=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({prompt:'Say OK.'}),signal:AbortSignal.timeout(30000)});
+          const body=await resp.json().catch(()=>({}));
+          console.log('AI_PROBE_HTTP',resp.status);
+          console.log('AI_PROBE_SUCCESS',body.success===true);
+          const errors=(body.errors||[]).slice(0,5).map(e=>({code:e.code,message:String(e.message||'').slice(0,200)}));
+          console.log('AI_PROBE_ERRORS',JSON.stringify(errors));
+          JS
