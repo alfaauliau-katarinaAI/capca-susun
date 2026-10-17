@@ -2,6 +2,9 @@ name: Cloudflare AI Image Smoke Test
 # Rerun after user confirmed model license acceptance 2026-10-17.
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cloudflare-vision-smoke.yml'
 concurrency:
   group: visionlab-cloudflare-live-smoke-${{ github.ref }}
   cancel-in-progress: true

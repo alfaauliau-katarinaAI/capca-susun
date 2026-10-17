@@ -1,6 +1,9 @@
 name: Cloudflare Diagnostic Summary
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cloudflare-diagnostics-summary.yml'
   schedule:
     - cron: '12 13 * * *'
 concurrency:
