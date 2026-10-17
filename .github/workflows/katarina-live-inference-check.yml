@@ -1,0 +1,22 @@
+name: Katarina Live Inference Verification
+on:
+  push:
+    paths:
+      - '.github/workflows/katarina-live-inference-check.yml'
+  workflow_dispatch:
+jobs:
+  live-inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      KATARINA_DEVICE_KEY: ${{ secrets.KATARINA_DEVICE_KEY }}
+      KATARINA_BASE_URL: https://katarina-vision-lab.alfaaulia8.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check live Cloudflare AI inference with a synthetic image
+        run: node .github/scripts/cloudflare-vision-smoke.mjs
