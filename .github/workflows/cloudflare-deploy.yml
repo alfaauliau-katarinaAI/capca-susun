@@ -1,9 +1,6 @@
 name: Deploy Cloudflare Vision Worker
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/cloudflare-deploy.yml'
 jobs:
   deploy:
     runs-on: ubuntu-latest
