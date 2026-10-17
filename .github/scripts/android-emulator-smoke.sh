@@ -29,4 +29,26 @@ adb exec-out screencap -p > artifacts/screenshot-diagnostics.png
 adb shell uiautomator dump /sdcard/window-diagnostics.xml || true
 adb pull /sdcard/window-diagnostics.xml artifacts/window-diagnostics.xml || true
 
-echo "SMOKE_PASS: App launched; UI confirmed; screenshots and logcat saved."
+# Full offline OCR acceptance test: a real ML Kit recognition run in the emulator.
+adb logcat -c
+adb shell am force-stop ai.katarina.visionlab || true
+adb shell am start -n ai.katarina.visionlab/.MainActivity --ez katarina_demo_ocr true
+for attempt in $(seq 1 24); do
+    adb logcat -d -s KatarinaOCR:I '*:S' > artifacts/demo-ocr-log.txt
+    if grep -q "OCR_DEMO_PASS" artifacts/demo-ocr-log.txt; then
+        echo "OCR_DEMO_PASS: Google ML Kit recognized synthetic TEST exactly."
+        break
+    fi
+    if grep -q "OCR_DEMO_FAILED\|OCR_DEMO_MISMATCH" artifacts/demo-ocr-log.txt; then
+        cat artifacts/demo-ocr-log.txt
+        echo "FAIL: offline OCR demo did not recognize TEST exactly"
+        exit 1
+    fi
+    sleep 2
+done
+grep -q "OCR_DEMO_PASS" artifacts/demo-ocr-log.txt
+adb exec-out screencap -p > artifacts/demo-ocr-screenshot.png
+adb shell uiautomator dump /sdcard/window-demo.xml
+adb pull /sdcard/window-demo.xml artifacts/window-demo.xml
+grep -q "OCR lokal" artifacts/window-demo.xml
+echo "SMOKE_PASS: App launched; offline ML Kit image OCR recognized TEST; screenshots and logcat saved."

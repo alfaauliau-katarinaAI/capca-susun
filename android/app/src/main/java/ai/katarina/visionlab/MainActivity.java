@@ -8,8 +8,11 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.net.Uri;
 import android.util.Base64;
+import android.util.Log;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -44,6 +47,7 @@ public final class MainActivity extends Activity {
     private static final String CAPTCHA_ANDROID_APP="https://play.google.com/store/apps/details?id=com.rucaptcha.bot";
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private Bitmap bitmap;
+    private boolean demoRunning=false;
     private Diagnostics diagnostics;
     private PairingHelper pairing;
     private TextView pairingCodeText;
@@ -82,13 +86,11 @@ public final class MainActivity extends Activity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18),dp(24),dp(18),dp(24));scroll.addView(root);
         TextView title=label("KATARINA / VISION LAB",23);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.7)",13));
+        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.8)",13));
         root.addView(label("Uji hanya gambar yang kamu miliki atau punya izin. Integrasi ini tidak mengakses akun Worker tanpa kamu login langsung di situs resmi.",13));
-        root.addView(label("Akun Worker 2Captcha",19));
-        button(root,"Masuk akun 2Captcha (resmi)",()->openOfficial2Captcha(CAPTCHA_LOGIN,"WORKER_LOGIN_OPENED"));
-        button(root,"Buka dashboard Worker",()->openOfficial2Captcha(CAPTCHA_WORKER,"WORKER_DASHBOARD_OPENED"));
-        button(root,"Aplikasi 2Captcha Bot resmi",()->openOfficial2Captcha(CAPTCHA_ANDROID_APP,"WORKER_OFFICIAL_APP_OPENED"));
-        root.addView(label("Password dan Client Key hanya dimasukkan pada layanan resmi 2Captcha. Katarina tidak menyimpan atau membaca sesi login. Ini bukan auto-worker.",12));
+        root.addView(label("Uji OCR teks / gambar sederhana",19));
+        root.addView(label("Tanpa login, tanpa Device Key, dan tanpa mengunggah gambar.",12));
+        button(root,"Jalankan demo OCR offline",this::runDemoOcr);
         button(root,"Pilih gambar",()->{
             Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT);
             pick.addCategory(Intent.CATEGORY_OPENABLE);pick.setType("image/*");
@@ -101,6 +103,7 @@ public final class MainActivity extends Activity {
         button(root,"Baca teks lokal (offline)",()->runOcr(false));
         button(root,"Hybrid (lokal lalu AI bila perlu)",()->runOcr(true));
         button(root,"Coba AI Cloudflare",this::cloudOcr);
+        button(root,"Salin hasil OCR",this::copyOcrText);
         root.addView(label("Hubungkan Cloudflare tanpa Device Key",19));
         pairingCodeText=label("Kode pairing: "+(pairing.pendingCode().isEmpty()?"belum dibuat":pairing.pendingCode()),18);
         pairingCodeText.setTypeface(null,Typeface.BOLD);
@@ -134,12 +137,18 @@ public final class MainActivity extends Activity {
         root.addView(label("Hanya kode error, versi aplikasi, dan versi Android. Tanpa gambar, isi OCR, password, Client Key atau identitas HP. Data disimpan maksimum 7 hari di Cloudflare. Laporan crash dikirim saat aplikasi dibuka lagi. Kamu dapat mematikan fitur kapan saja.",12));
         button(root,"Kirim laporan error tertunda",()->{diagnostics.flushAsync();message("Pengiriman error tertunda dicoba, jika fitur aktif dan Device Key tersimpan");});
         button(root,"Bagikan laporan diagnostik",this::shareReport);
+        root.addView(label("2Captcha — akses akun resmi",19));
+        button(root,"Masuk akun 2Captcha (resmi)",()->openOfficial2Captcha(CAPTCHA_LOGIN,"WORKER_LOGIN_OPENED"));
+        button(root,"Buka dashboard Worker",()->openOfficial2Captcha(CAPTCHA_WORKER,"WORKER_DASHBOARD_OPENED"));
+        button(root,"Aplikasi 2Captcha Bot resmi",()->openOfficial2Captcha(CAPTCHA_ANDROID_APP,"WORKER_OFFICIAL_APP_OPENED"));
+        root.addView(label("Login resmi saja. Rilis ini belum mengambil atau mengirim pekerjaan Worker berbayar secara otomatis.",12));
         status=label("Status: pilih gambar",13);root.addView(status);
         result=label("Hasil OCR tampil di sini",17);
         result.setBackground(panel(Color.WHITE));result.setPadding(dp(12),dp(12),dp(12),dp(12));root.addView(result);
         root.addView(label("OCR lokal tidak mengunggah gambar. Cloud AI hanya dipanggil lewat tombol Cloudflare atau fallback hybrid.",12));
         root.addView(label("Laporan dapat dibaca di ringkasan Cloudflare berizin, bukan akses jarak jauh ke layar HP.",12));
         setContentView(scroll);
+        if(getIntent()!=null&&getIntent().getBooleanExtra("katarina_demo_ocr",false))runDemoOcr();
     }
     private void message(String msg){status.setText("Status: "+msg);}
     private void saveSettings(){
@@ -180,6 +189,40 @@ public final class MainActivity extends Activity {
             preview.setImageBitmap(bitmap);result.setText("");diagnostics.record("IMAGE_SELECTED");message("Gambar siap");
         }catch(Exception e){diagnostics.record("IMAGE_OPEN_ERROR");message("Gagal membuka gambar");}
     }
+    private void runDemoOcr(){
+        try{
+            // Deterministic, synthetic example: never a real platform CAPTCHA.
+            Bitmap demo=Bitmap.createBitmap(800,300,Bitmap.Config.ARGB_8888);
+            Canvas canvas=new Canvas(demo);
+            canvas.drawColor(Color.WHITE);
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.SUBPIXEL_TEXT_FLAG);
+            p.setColor(Color.BLACK);
+            p.setTypeface(Typeface.create(Typeface.DEFAULT,Typeface.BOLD));
+            p.setTextSize(205f);
+            canvas.drawText("TEST",75f,220f,p);
+            bitmap=demo;
+            preview.setImageBitmap(bitmap);
+            result.setText("");
+            demoRunning=true;
+            diagnostics.record("OCR_DEMO_START");
+            runOcr(false);
+        }catch(Exception e){
+            demoRunning=false;
+            diagnostics.record("OCR_DEMO_FAILED");
+            Log.e("KatarinaOCR","OCR_DEMO_FAILED "+e.getClass().getSimpleName());
+            message("Demo offline gagal. Periksa laporan diagnostik.");
+        }
+    }
+    private void copyOcrText(){
+        String value=result.getText().toString().trim();
+        if(value.isEmpty()){message("Belum ada hasil OCR untuk disalin.");return;}
+        ClipboardManager manager=(ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE);
+        if(manager!=null){
+            manager.setPrimaryClip(ClipData.newPlainText("Katarina OCR",value));
+            diagnostics.record("OCR_TEXT_COPIED");
+            message("Hasil OCR tersalin.");
+        }
+    }
     private int expectedLength(){
         try{return Math.max(0,Math.min(50,Integer.parseInt(expectedInput.getText().toString().trim())));}
         catch(Exception ignored){return 0;}
@@ -193,10 +236,16 @@ public final class MainActivity extends Activity {
             String words=t.getText().trim(),compact=words.replaceAll("[^a-zA-Z0-9]","");
             result.setText("OCR lokal:\n"+(words.isEmpty()?"(kosong)":words));
             diagnostics.record("OCR_LOCAL_SUCCESS");
+            if(demoRunning){
+                demoRunning=false;
+                boolean exact="TEST".equals(compact.toUpperCase(java.util.Locale.US));
+                diagnostics.record(exact?"OCR_DEMO_PASS":"OCR_DEMO_MISMATCH");
+                Log.i("KatarinaOCR",exact?"OCR_DEMO_PASS":"OCR_DEMO_MISMATCH");
+            }
             message("OCR lokal selesai");
             int expected=expectedLength();
             if(hybrid&&(compact.isEmpty()||(expected>0&&compact.length()!=expected)))cloudOcr();
-        }).addOnFailureListener(e->{diagnostics.record("OCR_LOCAL_FAILED");message("OCR lokal gagal");if(hybrid)cloudOcr();})
+        }).addOnFailureListener(e->{diagnostics.record("OCR_LOCAL_FAILED");if(demoRunning){demoRunning=false;diagnostics.record("OCR_DEMO_FAILED");Log.e("KatarinaOCR","OCR_DEMO_FAILED");}message("OCR lokal gagal");if(hybrid)cloudOcr();})
           .addOnCompleteListener(t->recognizer.close());
     }
     private void cloudOcr(){
