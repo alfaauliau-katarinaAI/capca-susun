@@ -1,6 +1,20 @@
 # KATARINA AI — 2Captcha Worker Release Gate
 Updated: 2026-10-17
 
+## VERIFIED ACCEPTANCE TESTS (simulated Worker + real Cloudflare)
+- [x] **24/24 backend and simulated-worker tests pass**: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39040150693
+- [x] **Android v0.7 emulator smoke passes**: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39039682668
+- [x] **Cloudflare production deployment success** (OCR normalization fix): https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39040150705
+- [x] **Strict live image OCR fidelity**: synthetic image containing `TEST` returned exactly `TEST` (HTTP 200): https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39040212827
+- [x] Simulated Worker task receive -> Cloudflare mocked OCR -> mock task submit, duplicate protection, expiry, failure handling.
+- [x] One previous strict test correctly **failed** because model added explanatory text despite HTTP 200; fixed with narrow, tested response normalization. Failed regression: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39040000804
+- [x] One-shot GitHub Actions test triggers restored to manual to avoid repeated requests.
+- [ ] Worker API credentials/authorized route, live task receipt, real submit, real Worker account credit **NOT VERIFIED**.
+- [ ] GitHub OAuth App client registration and live account login **NOT IMPLEMENTED**.
+
+**GO/NO-GO:** NO-GO for automatic paid Worker APK release. No real 2Captcha task submissions made.
+
+
 ## RELEASE STATUS: BLOCKED — NOT READY FOR INSTALL / NOT A PAID WORKER
 
 The current Android Vision Lab v0.7 is a working prototype for image OCR,
