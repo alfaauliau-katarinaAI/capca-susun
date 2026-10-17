@@ -1,9 +1,13 @@
 name: Deploy Cloudflare Vision Worker
 on:
   workflow_dispatch:
+concurrency:
+  group: visionlab-cloudflare-deploy
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     environment: cloudflare-deploy
     permissions:
       contents: read

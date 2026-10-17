@@ -1,10 +1,9 @@
 name: Android emulator smoke and diagnostics
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'android/**'
-      - '.github/workflows/android-emulator-smoke.yml'
+concurrency:
+  group: visionlab-android-emulator-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -46,3 +45,4 @@ jobs:
           name: VisionLab-emulator-diagnostics
           path: artifacts/
           if-no-files-found: warn
+          retention-days: 3

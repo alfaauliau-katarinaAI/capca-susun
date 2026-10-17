@@ -4,10 +4,15 @@ on:
   push:
     paths:
       - 'cloudflare/**'
-      - '.github/workflows/cloudflare-test.yml'
+concurrency:
+  group: visionlab-cloudflare-unit-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
     defaults:
       run:
         working-directory: cloudflare

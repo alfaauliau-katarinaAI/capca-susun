@@ -7,10 +7,14 @@ on:
         type: boolean
         required: true
         default: false
+concurrency:
+  group: visionlab-meta-license-accept
+  cancel-in-progress: false
 jobs:
   accept:
     if: inputs.i_accept_meta_license == true
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     env:
