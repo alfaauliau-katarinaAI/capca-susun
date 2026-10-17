@@ -16,8 +16,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android platform SDK
+      # GitHub ubuntu-latest includes Android command-line tools; don't install removed "tools" package.
+      - name: Install required Android platform
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
