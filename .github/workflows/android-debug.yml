@@ -16,9 +16,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      # GitHub ubuntu-latest includes Android command-line tools; don't install removed "tools" package.
-      - name: Install required Android platform
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Setup Android tools and platform
+        uses: android-actions/setup-android@v3
+        with:
+          # Default package "tools" no longer exists; use only modern SDK components.
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: 'false'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
