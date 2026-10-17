@@ -1,0 +1,40 @@
+name: Cloudflare Diagnostic Summary
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '12 13 * * *'
+concurrency:
+  group: visionlab-diagnostics-report
+  cancel-in-progress: true
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      KATARINA_DEVICE_KEY: ${{ secrets.KATARINA_DEVICE_KEY }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Securely retrieve aggregated anonymous diagnostic summary
+        run: |
+          node <<'NODE'
+          const crypto=require('node:crypto');
+          const secret=process.env.KATARINA_DEVICE_KEY;
+          if(!secret||secret.length<24)throw new Error('Device Key secret missing');
+          const admin=crypto.createHmac('sha256',secret).update('katarina-diagnostics-admin-v1').digest('hex');
+          const url='https://katarina-vision-lab.alfaaulia8.workers.dev/v1/diagnostics-summary';
+          const resp=await fetch(url,{headers:{'X-Katarina-Admin-Key':admin},signal:AbortSignal.timeout(25000)});
+          const data=await resp.json();
+          console.log('DIAGNOSTIC_HTTP',resp.status);
+          if(resp.status!==200||!data.ok)throw new Error('Diagnostic summary inaccessible: '+(data.error||'http '+resp.status));
+          console.log('REPORTS_LAST_7_DAYS',data.reports);
+          console.log('ERROR_EVENTS',data.events);
+          console.log('COUNT_COMPLETE',data.complete);
+          for(const [code,count] of Object.entries(data.counts||{}).sort((a,b)=>b[1]-a[1])){
+            if(/^[A-Z][A-Z0-9_]{1,55}$/.test(code)&&Number.isInteger(count))console.log('EVENT',code,count);
+          }
+          console.log('No passwords, OCR results, IP, images, keys or device identifiers returned.');
+          NODE

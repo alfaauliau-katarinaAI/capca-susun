@@ -1,13 +1,16 @@
 name: Deploy Cloudflare Vision Worker
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cloudflare-deploy.yml'
 concurrency:
   group: visionlab-cloudflare-deploy
   cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     environment: cloudflare-deploy
     permissions:
       contents: read
@@ -23,17 +26,53 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify Cloudflare secrets are configured
+      - name: Verify Cloudflare credentials are configured
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo 'Missing CLOUDFLARE_API_TOKEN' && exit 1)
           test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo 'Missing CLOUDFLARE_ACCOUNT_ID' && exit 1)
           test -n "$KATARINA_DEVICE_KEY" || (echo 'Missing KATARINA_DEVICE_KEY' && exit 1)
-          test "$(printf '%s' "$KATARINA_DEVICE_KEY" | wc -c)" -ge 24 || (echo 'Device Key too short' && exit 1)
+          test "$(printf '%s' "$KATARINA_DEVICE_KEY" | wc -c)" -ge 24
       - name: Install Wrangler
         run: npm install --no-audit --no-fund
       - name: Validate Worker unit tests
         run: npm test
-      - name: Deploy Worker
+      - name: Provision/reuse private Cloudflare KV diagnostic namespace
+        run: |
+          node <<'NODE'
+          const fs=require('node:fs');
+          const token=process.env.CLOUDFLARE_API_TOKEN;
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          const base='https://api.cloudflare.com/client/v4/accounts/'+account+'/storage/kv/namespaces';
+          const title='katarina-vision-lab_DIAGNOSTICS';
+          async function call(method,url,payload){
+            const response=await fetch(url,{method,headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},body:payload?JSON.stringify(payload):undefined,signal:AbortSignal.timeout(15000)});
+            const data=await response.json().catch(()=>({}));
+            if(!response.ok||!data.success)throw new Error('Cloudflare KV '+method+' failed: HTTP '+response.status+' codes '+JSON.stringify((data.errors||[]).map(e=>e.code)));
+            return data;
+          }
+          let found;
+          for(let page=1;page<=5&&!found;page++){
+            const data=await call('GET',base+'?per_page=100&page='+page);
+            found=(data.result||[]).find(x=>x.title===title);
+            if(page>=(data.result_info?.total_pages||1))break;
+          }
+          if(!found){const created=await call('POST',base,{title});found=created.result;console.log('KV namespace created');}
+          else console.log('KV namespace reused');
+          if(!found?.id||!/^[a-f0-9]{32}$/.test(found.id))throw new Error('Invalid KV binding ID');
+          fs.appendFileSync('wrangler.toml',"\n[[kv_namespaces]]\nbinding = \"DIAGNOSTICS\"\nid = \""+found.id+"\"\n");
+          NODE
+      - name: Deploy Worker and KV binding
         run: npx wrangler deploy
       - name: Provision private Device Key
         run: printf '%s' "$KATARINA_DEVICE_KEY" | npx wrangler secret put APP_DEVICE_KEY
+      - name: Provision private diagnostics-admin key (not stored in Android)
+        run: |
+          node -e 'const c=require("node:crypto");process.stdout.write(c.createHmac("sha256",process.env.KATARINA_DEVICE_KEY).update("katarina-diagnostics-admin-v1").digest("hex"))' | npx wrangler secret put DIAG_ADMIN_KEY
+      - name: Check live health and diagnostic binding
+        run: |
+          node <<'NODE'
+          const response=await fetch('https://katarina-vision-lab.alfaaulia8.workers.dev/health',{signal:AbortSignal.timeout(15000)});
+          const data=await response.json();
+          console.log('HEALTH_HTTP',response.status,'VERSION',data.version,'DIAGNOSTICS_BOUND',data.diagnostics);
+          if(response.status!==200||!data.diagnostics||data.version!=='0.6.0')process.exitCode=1;
+          NODE

@@ -12,6 +12,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -70,11 +71,12 @@ public final class MainActivity extends Activity {
         diagnostics=new Diagnostics(this);
         diagnostics.installCrashRecorder();
         diagnostics.record("APP_OPEN");
+        diagnostics.flushAsync();
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(245,248,248));
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18),dp(24),dp(18),dp(24));scroll.addView(root);
         TextView title=label("KATARINA / VISION LAB",23);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.5)",13));
+        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.6)",13));
         root.addView(label("Uji hanya gambar yang kamu miliki atau punya izin. Integrasi ini tidak mengakses akun Worker tanpa kamu login langsung di situs resmi.",13));
         root.addView(label("Akun Worker 2Captcha",19));
         button(root,"Masuk akun 2Captcha (resmi)",()->openOfficial2Captcha(CAPTCHA_LOGIN,"WORKER_LOGIN_OPENED"));
@@ -104,12 +106,25 @@ public final class MainActivity extends Activity {
         expectedInput.setText(getPreferences(MODE_PRIVATE).getString("expected","0"));
         button(root,"Simpan pengaturan",this::saveSettings);
         button(root,"Tes koneksi Cloudflare",this::checkBackend);
+        root.addView(label("Pemantauan kesalahan",19));
+        CheckBox automaticReporting=new CheckBox(this);
+        automaticReporting.setText("Kirim otomatis kode error anonim ke Cloudflare");
+        automaticReporting.setTextSize(14);
+        automaticReporting.setTextColor(fg);
+        automaticReporting.setChecked(diagnostics.isAutomaticEnabled());
+        automaticReporting.setOnCheckedChangeListener((view,enabled)->{
+            diagnostics.setAutomaticEnabled(enabled);
+            if(status!=null)message(enabled?"Laporan error otomatis aktif":"Laporan error otomatis dimatikan");
+        });
+        root.addView(automaticReporting);
+        root.addView(label("Hanya kode error, versi aplikasi, dan versi Android. Tanpa gambar, isi OCR, password, Client Key atau identitas HP. Data disimpan maksimum 7 hari di Cloudflare. Laporan crash dikirim saat aplikasi dibuka lagi. Kamu dapat mematikan fitur kapan saja.",12));
+        button(root,"Kirim laporan error tertunda",()->{diagnostics.flushAsync();message("Pengiriman error tertunda dicoba, jika fitur aktif dan Device Key tersimpan");});
         button(root,"Bagikan laporan diagnostik",this::shareReport);
         status=label("Status: pilih gambar",13);root.addView(status);
         result=label("Hasil OCR tampil di sini",17);
         result.setBackground(panel(Color.WHITE));result.setPadding(dp(12),dp(12),dp(12),dp(12));root.addView(result);
         root.addView(label("OCR lokal tidak mengunggah gambar. Cloud AI hanya dipanggil lewat tombol Cloudflare atau fallback hybrid.",12));
-        root.addView(label("Laporan diagnostik hanya berisi kode kejadian, versi aplikasi dan versi Android. Tidak dikirim otomatis; kamu yang memilih kapan membagikannya.",12));
+        root.addView(label("Laporan dapat dibaca di ringkasan Cloudflare berizin, bukan akses jarak jauh ke layar HP.",12));
         setContentView(scroll);
     }
     private void message(String msg){status.setText("Status: "+msg);}
@@ -124,7 +139,7 @@ public final class MainActivity extends Activity {
         catch(Exception e){message("Gagal menyimpan Device Key");return;}
         getPreferences(MODE_PRIVATE).edit().putString("endpoint",endpoint)
           .putString("expected",expectedInput.getText().toString().trim()).apply();
-        keyInput.setText("");diagnostics.record("SETTINGS_SAVED");message("Tersimpan; Device Key terenkripsi");
+        keyInput.setText("");diagnostics.record("SETTINGS_SAVED");diagnostics.flushAsync();message("Tersimpan; Device Key terenkripsi");
     }
     @Override protected void onActivityResult(int code,int rc,Intent data){
         super.onActivityResult(code,rc,data);
