@@ -1,0 +1,67 @@
+name: Android emulator smoke and diagnostics
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-emulator-smoke.yml'
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: 'false'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build debug APK
+        working-directory: android
+        run: gradle :app:assembleDebug --no-daemon
+      - name: Enable KVM for emulator
+        run: |
+          sudo chmod 666 /dev/kvm
+      - name: Emulator smoke test, screenshot, logcat
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_2
+          target: google_apis
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p artifacts
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am force-stop ai.katarina.visionlab || true
+            adb logcat -c
+            adb shell am start -n ai.katarina.visionlab/.MainActivity
+            sleep 12
+            adb shell dumpsys activity activities > artifacts/activity.txt
+            adb shell uiautomator dump /sdcard/window.xml || true
+            adb pull /sdcard/window.xml artifacts/window.xml || true
+            adb exec-out screencap -p > artifacts/screenshot.png
+            adb logcat -d -v time > artifacts/logcat.txt
+            test -s artifacts/screenshot.png
+            grep -q "KATARINA / VISION LAB" artifacts/window.xml
+            if grep -E "FATAL EXCEPTION|Process: ai.katarina.visionlab.*(has died|crashed)" artifacts/logcat.txt; then
+              echo "App crash found in logcat"
+              exit 1
+            fi
+            echo "SMOKE_PASS: Android launched; UI confirmed; screenshot/logcat saved."
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: VisionLab-emulator-diagnostics
+          path: artifacts/
+          if-no-files-found: warn

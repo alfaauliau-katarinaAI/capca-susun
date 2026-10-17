@@ -1,15 +1,14 @@
-# Status Katarina Hybrid Vision Lab — 17 Oktober 2026
+# Katarina Hybrid Vision Lab v0.3 — 17 Oktober 2026
 
-- [x] Repo GitHub: alfaauliau-katarinaAI/capca-susun, branch main.
-- [x] Android OCR lokal ML Kit + fallback Cloudflare (source).
-- [x] Worker Cloudflare AI (source dan pengujian mock).
-- [x] Backend unit test berhasil: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39026112481
-- [x] Android debug APK berhasil dibangun lewat GitHub Actions: https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39026236894
-- [x] APK tersimpan sebagai artifact GitHub: Katarina-Vision-Lab-debug-APK
-- [ ] Instalasi dan pengujian APK di HP pengguna.
-- [ ] Deployment Cloudflare menggunakan akun pengguna.
-- [ ] Pengujian inferensi AI sungguhan dan kualitas OCR pada perangkat nyata.
-- [ ] Integrasi Worker microtask 2Captcha: tidak ada, memerlukan izin resmi.
-- [ ] Penghasilan terverifikasi dari proyek ini: $0.
+- [x] Repo `alfaauliau-katarinaAI/capca-susun` dengan source Android ML Kit dan Cloudflare Workers AI.
+- [x] Android: kode diagnostik privat, tombol tes `/health`, dan laporan yang dibagikan hanya atas tindakan pengguna.
+- [x] GitHub Actions: build APK, unit test Cloudflare, dan workflow uji emulator Android (source).
+- [ ] Android v0.3 **hasil build APK** diverifikasi di Actions.
+- [ ] Android v0.3 **uji emulator** diverifikasi; cek artifact screenshot dan logcat.
+- [ ] APK v0.3 dipasang/diuji pada HP pengguna.
+- [ ] Cloudflare Workers AI **belum dideploy** karena akun/izin belum terhubung.
+- [ ] OCR dan inferensi AI Cloudflare dengan gambar nyata belum diuji secara end-to-end.
+- [ ] Tidak ada integrasi 2Captcha Worker aktif.
+- [ ] Penghasilan dari sistem: Rp0 terverifikasi.
 
-Catatan: Artifact ini debug APK untuk pengujian. Tidak ada kredensial 2Captcha atau Cloudflare di repo.
+Catatan: ChatGPT dapat melihat hasil GitHub Actions/emulator melalui koneksi GitHub. Ini **bukan akses ke HP fisik**.

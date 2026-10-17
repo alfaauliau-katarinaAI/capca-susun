@@ -36,6 +36,7 @@ public final class MainActivity extends Activity {
     private static final int PICK_IMAGE=2026;
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private Bitmap bitmap;
+    private Diagnostics diagnostics;
     private ImageView preview;
     private TextView status, result;
     private EditText urlInput, keyInput, expectedInput;
@@ -62,6 +63,9 @@ public final class MainActivity extends Activity {
     }
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
+        diagnostics=new Diagnostics(this);
+        diagnostics.installCrashRecorder();
+        diagnostics.record("APP_OPEN");
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(245,248,248));
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18),dp(24),dp(18),dp(24));scroll.addView(root);
@@ -89,10 +93,13 @@ public final class MainActivity extends Activity {
         urlInput.setText(getPreferences(MODE_PRIVATE).getString("endpoint",""));
         expectedInput.setText(getPreferences(MODE_PRIVATE).getString("expected","0"));
         button(root,"Simpan pengaturan",this::saveSettings);
+        button(root,"Tes koneksi Cloudflare",this::checkBackend);
+        button(root,"Bagikan laporan diagnostik",this::shareReport);
         status=label("Status: pilih gambar",13);root.addView(status);
         result=label("Hasil OCR tampil di sini",17);
         result.setBackground(panel(Color.WHITE));result.setPadding(dp(12),dp(12),dp(12),dp(12));root.addView(result);
         root.addView(label("OCR lokal tidak mengunggah gambar. Cloud AI hanya dipanggil lewat tombol Cloudflare atau fallback hybrid.",12));
+        root.addView(label("Laporan diagnostik hanya berisi kode kejadian, versi aplikasi dan versi Android. Tidak dikirim otomatis; kamu yang memilih kapan membagikannya.",12));
         setContentView(scroll);
     }
     private void message(String msg){status.setText("Status: "+msg);}
@@ -107,7 +114,7 @@ public final class MainActivity extends Activity {
         catch(Exception e){message("Gagal menyimpan Device Key");return;}
         getPreferences(MODE_PRIVATE).edit().putString("endpoint",endpoint)
           .putString("expected",expectedInput.getText().toString().trim()).apply();
-        keyInput.setText("");message("Tersimpan; Device Key terenkripsi");
+        keyInput.setText("");diagnostics.record("SETTINGS_SAVED");message("Tersimpan; Device Key terenkripsi");
     }
     @Override protected void onActivityResult(int code,int rc,Intent data){
         super.onActivityResult(code,rc,data);
@@ -115,14 +122,14 @@ public final class MainActivity extends Activity {
         Uri uri=data.getData();if(uri==null)return;
         try(InputStream stream=getContentResolver().openInputStream(uri)){
             Bitmap raw=BitmapFactory.decodeStream(stream);
-            if(raw==null){message("Gambar tidak terbaca");return;}
+            if(raw==null){diagnostics.record("IMAGE_INVALID");message("Gambar tidak terbaca");return;}
             int max=Math.max(raw.getWidth(),raw.getHeight());
             float scale=Math.min(1f,1024f/max);
             bitmap=scale<1f?Bitmap.createScaledBitmap(raw,
               Math.max(1,Math.round(raw.getWidth()*scale)),
               Math.max(1,Math.round(raw.getHeight()*scale)),true):raw;
-            preview.setImageBitmap(bitmap);result.setText("");message("Gambar siap");
-        }catch(Exception e){message("Gagal membuka gambar");}
+            preview.setImageBitmap(bitmap);result.setText("");diagnostics.record("IMAGE_SELECTED");message("Gambar siap");
+        }catch(Exception e){diagnostics.record("IMAGE_OPEN_ERROR");message("Gagal membuka gambar");}
     }
     private int expectedLength(){
         try{return Math.max(0,Math.min(50,Integer.parseInt(expectedInput.getText().toString().trim())));}
@@ -130,24 +137,27 @@ public final class MainActivity extends Activity {
     }
     private void runOcr(boolean hybrid){
         if(bitmap==null){message("Pilih gambar dahulu");return;}
+        diagnostics.record(hybrid?"OCR_HYBRID_START":"OCR_LOCAL_START");
         message("Memproses OCR lokal...");
         final var recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
         recognizer.process(InputImage.fromBitmap(bitmap,0)).addOnSuccessListener(t->{
             String words=t.getText().trim(),compact=words.replaceAll("[^a-zA-Z0-9]","");
             result.setText("OCR lokal:\n"+(words.isEmpty()?"(kosong)":words));
+            diagnostics.record("OCR_LOCAL_SUCCESS");
             message("OCR lokal selesai");
             int expected=expectedLength();
             if(hybrid&&(compact.isEmpty()||(expected>0&&compact.length()!=expected)))cloudOcr();
-        }).addOnFailureListener(e->{message("OCR lokal gagal");if(hybrid)cloudOcr();})
+        }).addOnFailureListener(e->{diagnostics.record("OCR_LOCAL_FAILED");message("OCR lokal gagal");if(hybrid)cloudOcr();})
           .addOnCompleteListener(t->recognizer.close());
     }
     private void cloudOcr(){
         if(bitmap==null){message("Pilih gambar dahulu");return;}
+        diagnostics.record("CLOUD_REQUEST_START");
         String endpoint=urlInput.getText().toString().trim().replaceAll("/+$","");
-        if(!endpoint.matches("https://[a-zA-Z0-9.-]+(?::443)?")){message("Isi URL Cloudflare HTTPS");return;}
+        if(!endpoint.matches("https://[a-zA-Z0-9.-]+(?::443)?")){diagnostics.record("CLOUD_NO_URL");message("Isi URL Cloudflare HTTPS");return;}
         String key=keyInput.getText().toString().trim();
         if(key.isEmpty())try{key=new SecretStore(this).load();}catch(Exception e){message("Kunci tidak tersedia");return;}
-        if(key.length()<24){message("Device Key belum tersimpan");return;}
+        if(key.length()<24){diagnostics.record("CLOUD_NO_KEY");message("Device Key belum tersimpan");return;}
         final String secret=key;final Bitmap image=bitmap;
         message("Memanggil Cloudflare AI...");
         executor.execute(()->{
@@ -172,6 +182,7 @@ public final class MainActivity extends Activity {
                 c.setRequestProperty("X-Katarina-Key",secret);
                 try(OutputStream os=c.getOutputStream()){os.write(payload.toString().getBytes(StandardCharsets.UTF_8));}
                 int code=c.getResponseCode();
+                diagnostics.record("CLOUD_HTTP_"+code);
                 try(InputStream in=code<400?c.getInputStream():c.getErrorStream()){
                     ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] chunk=new byte[2048];int n;
                     while((n=in.read(chunk))!=-1&&b.size()<100000)b.write(chunk,0,n);
@@ -182,9 +193,49 @@ public final class MainActivity extends Activity {
                         else {result.setText(result.getText()+"\nAI Cloudflare:\n"+text);message("Selesai; verifikasi teks secara manual");}
                     });
                 }
-            }catch(Exception e){runOnUiThread(()->message("Koneksi Cloudflare gagal: "+e.getClass().getSimpleName()));}
+            }catch(Exception e){diagnostics.record("CLOUD_NETWORK_ERROR");runOnUiThread(()->message("Koneksi Cloudflare gagal: "+e.getClass().getSimpleName()));}
             finally{if(c!=null)c.disconnect();}
         });
     }
-    @Override protected void onDestroy(){executor.shutdownNow();super.onDestroy();}
+    private void checkBackend(){
+        String endpoint=urlInput.getText().toString().trim().replaceAll("/+$","");
+        if(!endpoint.matches("https://[a-zA-Z0-9.-]+(?::443)?")){
+            diagnostics.record("HEALTH_NO_URL");
+            message("Masukkan URL Cloudflare HTTPS terlebih dahulu");
+            return;
+        }
+        diagnostics.record("HEALTH_START");
+        message("Mengecek /health...");
+        executor.execute(()->{
+            HttpURLConnection connection=null;
+            try{
+                connection=(HttpURLConnection)new URL(endpoint+"/health").openConnection();
+                connection.setConnectTimeout(7000);
+                connection.setReadTimeout(7000);
+                connection.setRequestMethod("GET");
+                final int statusCode=connection.getResponseCode();
+                diagnostics.record("HEALTH_HTTP_"+statusCode);
+                runOnUiThread(()->message(statusCode==200
+                    ?"Cloudflare endpoint dapat diakses (model AI belum diuji)"
+                    :"Cloudflare /health: HTTP "+statusCode));
+            }catch(Exception e){
+                diagnostics.record("HEALTH_NETWORK_ERROR");
+                runOnUiThread(()->message("Tidak dapat menghubungi Cloudflare: "+e.getClass().getSimpleName()));
+            }finally{if(connection!=null)connection.disconnect();}
+        });
+    }
+
+    private void shareReport(){
+        diagnostics.record("REPORT_SHARED_BY_USER");
+        Intent send=new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_SUBJECT,"Katarina Vision Lab - Diagnostic Report");
+        send.putExtra(Intent.EXTRA_TEXT,diagnostics.report());
+        startActivity(Intent.createChooser(send,"Bagikan laporan diagnostik"));
+    }
+
+    @Override protected void onDestroy(){
+        executor.shutdownNow();
+        super.onDestroy();
+    }
 }
