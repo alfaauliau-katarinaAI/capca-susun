@@ -35,6 +35,9 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity {
     private static final int PICK_IMAGE=2026;
     private static final String WORKER_ENDPOINT="https://katarina-vision-lab.alfaaulia8.workers.dev";
+    private static final String CAPTCHA_LOGIN="https://2captcha.com/auth/login";
+    private static final String CAPTCHA_WORKER="https://2captcha.com/cabinet";
+    private static final String CAPTCHA_ANDROID_APP="https://play.google.com/store/apps/details?id=com.rucaptcha.bot";
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private Bitmap bitmap;
     private Diagnostics diagnostics;
@@ -71,8 +74,13 @@ public final class MainActivity extends Activity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18),dp(24),dp(18),dp(24));scroll.addView(root);
         TextView title=label("KATARINA / VISION LAB",23);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.4)",13));
-        root.addView(label("Uji hanya gambar yang kamu miliki atau punya izin. Ini bukan bot Worker 2Captcha.",13));
+        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.5)",13));
+        root.addView(label("Uji hanya gambar yang kamu miliki atau punya izin. Integrasi ini tidak mengakses akun Worker tanpa kamu login langsung di situs resmi.",13));
+        root.addView(label("Akun Worker 2Captcha",19));
+        button(root,"Masuk akun 2Captcha (resmi)",()->openOfficial2Captcha(CAPTCHA_LOGIN,"WORKER_LOGIN_OPENED"));
+        button(root,"Buka dashboard Worker",()->openOfficial2Captcha(CAPTCHA_WORKER,"WORKER_DASHBOARD_OPENED"));
+        button(root,"Aplikasi 2Captcha Bot resmi",()->openOfficial2Captcha(CAPTCHA_ANDROID_APP,"WORKER_OFFICIAL_APP_OPENED"));
+        root.addView(label("Password dan Client Key hanya dimasukkan pada layanan resmi 2Captcha. Katarina tidak menyimpan atau membaca sesi login. Ini bukan auto-worker.",12));
         button(root,"Pilih gambar",()->{
             Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT);
             pick.addCategory(Intent.CATEGORY_OPENABLE);pick.setType("image/*");
@@ -239,6 +247,28 @@ public final class MainActivity extends Activity {
                 runOnUiThread(()->message("Tidak dapat menghubungi Cloudflare: "+e.getClass().getSimpleName()));
             }finally{if(connection!=null)connection.disconnect();}
         });
+    }
+
+    /** Open only hard-coded HTTPS destinations on the official 2Captcha or Google Play domains. */
+    private void openOfficial2Captcha(String address,String diagnosticCode){
+        Uri uri=Uri.parse(address);
+        String host=uri.getHost();
+        if(!"https".equals(uri.getScheme())||
+            !("2captcha.com".equals(host)||"play.google.com".equals(host))){
+            diagnostics.record("OFFICIAL_LINK_REJECTED");
+            message("Alamat 2Captcha tidak valid");
+            return;
+        }
+        try{
+            Intent browser=new Intent(Intent.ACTION_VIEW,uri);
+            browser.addCategory(Intent.CATEGORY_BROWSABLE);
+            startActivity(browser);
+            diagnostics.record(diagnosticCode);
+            message("Halaman resmi dibuka di browser. Login di sana, bukan di Katarina.");
+        }catch(android.content.ActivityNotFoundException e){
+            diagnostics.record("OFFICIAL_BROWSER_UNAVAILABLE");
+            message("Tidak ditemukan browser. Instal Chrome atau browser terpercaya.");
+        }
     }
 
     private void shareReport(){
