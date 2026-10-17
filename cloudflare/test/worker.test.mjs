@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker,{parseDataUrl,authorized,validDiagnostic} from '../src/index.mjs';
+import worker,{parseDataUrl,authorized,validDiagnostic,normalizeTranscription} from '../src/index.mjs';
 const KEY='a-very-long-random-test-key-12345678';
 const ADMIN='a-different-long-admin-test-key-123';
 const PNG='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/By8AAAAASUVORK5CYII=';
@@ -87,4 +87,12 @@ test('pairing request, approval, claim and device OCR token work end to end',asy
   const recognized=await worker.fetch(req('/v1/ocr',{image:IMAGE},token),env);
   assert.equal(recognized.status,200);
   assert.equal((await recognized.json()).text,'TEST42');
+});
+
+test('Cloudflare real-world explanatory OCR wrapper is removed, without losing content',()=>{
+  assert.equal(normalizeTranscription('The text in the image is "TEST".'),'TEST');
+  assert.equal(normalizeTranscription('The image contains the text “HELLO7”.'),'HELLO7');
+  assert.equal(normalizeTranscription('Hello World'),'Hello World');
+  assert.equal(normalizeTranscription('"Do not remove literal quotes"'),'"Do not remove literal quotes"');
+  assert.equal(normalizeTranscription(null),'');
 });

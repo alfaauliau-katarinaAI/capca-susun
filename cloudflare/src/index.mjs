@@ -14,6 +14,17 @@ const HEADERS={'content-type':'application/json; charset=utf-8','cache-control':
 const out=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:HEADERS});
 const validCode=(v)=>typeof v==='string'&&/^[A-Z][A-Z0-9_]{1,55}$/.test(v);
 
+// Remove only narrowly recognizable AI explanation wrappers, never alter arbitrary OCR text.
+// An observed Workers AI response to a real synthetic "TEST" image was:
+// The text in the image is "TEST".
+function normalizeTranscription(raw){
+  if(typeof raw!=='string')return '';
+  const text=raw.trim().slice(0,1500);
+  const match=/^(?:The text (?:in|on) the image is|The image contains the text)\s+["“]([^"”]{1,1000})["”]\.?\s*$/is.exec(text);
+  return (match?match[1]:text).trim().slice(0,1000);
+}
+
+
 function parseDataUrl(image){
   if(typeof image!=='string')return null;
   const m=/^(data:(image\/(?:png|jpeg));base64,)([a-zA-Z0-9+/]+={0,2})$/.exec(image);
@@ -185,7 +196,7 @@ async function inferImage(request,env){
       max_tokens:120,temperature:0
     });
     const candidate=typeof response==='string'?response:response?.response??response?.text??'';
-    return out({ok:true,text:typeof candidate==='string'?candidate.trim().slice(0,1000):'',engine:'workers-ai',model:MODEL,confidence:null});
+    return out({ok:true,text:normalizeTranscription(candidate),engine:'workers-ai',model:MODEL,confidence:null});
   }catch(e){
     // Do not echo vendor error internals or user image.
     console.error('AI infer failed',String(e?.name||'provider_error'));
@@ -207,4 +218,4 @@ export default {
     return out({error:'not_found'},404);
   }
 };
-export {parseDataUrl,authorized,validDiagnostic};
+export {parseDataUrl,authorized,validDiagnostic,normalizeTranscription};
