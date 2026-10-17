@@ -58,3 +58,21 @@ npx wrangler deploy
 - Baca [DIAGNOSTICS.md](DIAGNOSTICS.md) untuk batas keamanan dan langkah audit.
 
 **Batas status:** Build emulator ≠ pengujian HP fisik. Tes `/health` ≠ inferensi model berhasil. Untuk deploy Cloudflare tetap perlu akses akun/izin pengguna.
+
+## Deploy via GitHub Actions (Cloudflare)
+Workflow manual `Deploy Cloudflare Vision Worker` sudah disiapkan. **Belum dideploy**.
+1. Di repository GitHub → Settings → Secrets and variables → Actions, masukkan tiga **repository secrets**:
+   - `CLOUDFLARE_API_TOKEN`: token Cloudflare terbatas untuk Workers deployment.
+   - `CLOUDFLARE_ACCOUNT_ID`: Account ID Cloudflare.
+   - `KATARINA_DEVICE_KEY`: random minimal 24 karakter, **bukan 2Captcha Client Key**.
+2. Pastikan persetujuan lisensi model Meta pada akun Workers AI Cloudflare dilakukan pemilik akun sesuai dokumentasi Cloudflare.
+3. GitHub → Actions → **Deploy Cloudflare Vision Worker** → Run workflow.
+4. Setelah berhasil, copy URL `workers.dev` ke aplikasi, masukkan `KATARINA_DEVICE_KEY` langsung di aplikasi → Simpan → Tes koneksi Cloudflare.
+
+Jangan kirim tiga rahasia tersebut di chat dan jangan commit ke GitHub. Debug endpoint `/health` hanya memeriksa koneksi, bukan keberhasilan AI inferensi.
+
+## Hasil pengujian otomatis Android v0.3
+- **APK build: lulus** — [GitHub Actions](https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39028263058).
+- **Emulator smoke test: lulus** — [GitHub Actions](https://github.com/alfaauliau-katarinaAI/capca-susun/actions/runs/39028734561).
+- Screenshot, tampilan area diagnostik, UI hierarchy, dan logcat tersedia sebagai artifact `VisionLab-emulator-diagnostics` pada run tersebut; telah diperiksa tanpa crash saat startup.
+- Ini bukan pengujian HP fisik dan bukan bukti koneksi Workers AI sungguhan.
