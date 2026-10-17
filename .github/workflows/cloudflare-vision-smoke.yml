@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/cloudflare-vision-smoke.yml'
+      - '.github/scripts/cloudflare-vision-smoke.mjs'
 concurrency:
   group: visionlab-cloudflare-live-smoke-${{ github.ref }}
   cancel-in-progress: true

@@ -43,4 +43,8 @@ console.log('OCR_HTTP',response.status);
 console.log('OCR_ENGINE',result.engine||'unknown');
 console.log('OCR_TEXT_LENGTH',String(result.text||'').length);
 if(response.status!==200||result.ok!==true)throw new Error('Workers AI inference not ready: '+String(result.error||'http_'+response.status));
+const output=String(result.text||'').trim();
+console.log('SYNTHETIC_TEXT_RECOGNIZED',JSON.stringify(output));
+console.log('EXACT_TEXT_MATCH',output.toUpperCase()==='TEST');
+if(output.toUpperCase()!=='TEST')throw new Error('OCR_ACCURACY_FAILED: expected exact synthetic word TEST');
 console.log('INFERENCE_SUCCESS: Cloudflare Workers AI accepted synthetic image.');
