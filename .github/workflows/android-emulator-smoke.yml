@@ -1,4 +1,5 @@
 name: Android emulator smoke and diagnostics
+# Validate v0.8 complete offline OCR path, not just app launch.
 on:
   workflow_dispatch:
   push:
