@@ -39,26 +39,7 @@ jobs:
           target: google_apis
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           disable-animations: true
-          script: |
-            set -eu
-            mkdir -p artifacts
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-            adb shell am force-stop ai.katarina.visionlab || true
-            adb logcat -c
-            adb shell am start -n ai.katarina.visionlab/.MainActivity
-            sleep 12
-            adb shell dumpsys activity activities > artifacts/activity.txt
-            adb shell uiautomator dump /sdcard/window.xml || true
-            adb pull /sdcard/window.xml artifacts/window.xml || true
-            adb exec-out screencap -p > artifacts/screenshot.png
-            adb logcat -d -v time > artifacts/logcat.txt
-            test -s artifacts/screenshot.png
-            grep -q "KATARINA / VISION LAB" artifacts/window.xml
-            if grep -E "FATAL EXCEPTION|Process: ai.katarina.visionlab.*(has died|crashed)" artifacts/logcat.txt; then
-              echo "App crash found in logcat"
-              exit 1
-            fi
-            echo "SMOKE_PASS: Android launched; UI confirmed; screenshot/logcat saved."
+          script: bash .github/scripts/android-emulator-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
