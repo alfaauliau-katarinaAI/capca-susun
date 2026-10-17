@@ -34,6 +34,7 @@ import org.json.JSONObject;
 /** User-selected image OCR only; not a 2Captcha worker client. */
 public final class MainActivity extends Activity {
     private static final int PICK_IMAGE=2026;
+    private static final String WORKER_ENDPOINT="https://katarina-vision-lab.alfaaulia8.workers.dev";
     private final ExecutorService executor=Executors.newSingleThreadExecutor();
     private Bitmap bitmap;
     private Diagnostics diagnostics;
@@ -70,7 +71,7 @@ public final class MainActivity extends Activity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18),dp(24),dp(18),dp(24));scroll.addView(root);
         TextView title=label("KATARINA / VISION LAB",23);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("Android offline OCR + optional Cloudflare AI",13));
+        root.addView(label("Android offline OCR + optional Cloudflare AI (v0.4)",13));
         root.addView(label("Uji hanya gambar yang kamu miliki atau punya izin. Ini bukan bot Worker 2Captcha.",13));
         button(root,"Pilih gambar",()->{
             Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -90,7 +91,8 @@ public final class MainActivity extends Activity {
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
         expectedInput=field(root,"Panjang teks yang diharapkan, 0 = bebas");
         expectedInput.setInputType(InputType.TYPE_CLASS_NUMBER);
-        urlInput.setText(getPreferences(MODE_PRIVATE).getString("endpoint",""));
+        urlInput.setText(WORKER_ENDPOINT);
+        urlInput.setEnabled(false);
         expectedInput.setText(getPreferences(MODE_PRIVATE).getString("expected","0"));
         button(root,"Simpan pengaturan",this::saveSettings);
         button(root,"Tes koneksi Cloudflare",this::checkBackend);
@@ -104,7 +106,7 @@ public final class MainActivity extends Activity {
     }
     private void message(String msg){status.setText("Status: "+msg);}
     private void saveSettings(){
-        String endpoint=urlInput.getText().toString().trim().replaceAll("/+$","");
+        String endpoint=WORKER_ENDPOINT;
         if(!endpoint.isEmpty()&&!endpoint.matches("https://[a-zA-Z0-9.-]+(?::443)?")){
             message("URL Cloudflare harus HTTPS tanpa path");return;
         }
@@ -120,8 +122,18 @@ public final class MainActivity extends Activity {
         super.onActivityResult(code,rc,data);
         if(code!=PICK_IMAGE||rc!=RESULT_OK||data==null)return;
         Uri uri=data.getData();if(uri==null)return;
-        try(InputStream stream=getContentResolver().openInputStream(uri)){
-            Bitmap raw=BitmapFactory.decodeStream(stream);
+        try{
+            BitmapFactory.Options opts=new BitmapFactory.Options();
+            opts.inJustDecodeBounds=true;
+            try(InputStream in=getContentResolver().openInputStream(uri)){ BitmapFactory.decodeStream(in,null,opts); }
+            if(opts.outWidth<=0||opts.outHeight<=0)throw new IllegalArgumentException("invalid image");
+            int sample=1;
+            while(Math.max(opts.outWidth,opts.outHeight)/sample>1600&&sample<128)sample*=2;
+            BitmapFactory.Options scaled=new BitmapFactory.Options();
+            scaled.inSampleSize=sample;
+            scaled.inPreferredConfig=Bitmap.Config.RGB_565;
+            Bitmap raw;
+            try(InputStream in=getContentResolver().openInputStream(uri)){ raw=BitmapFactory.decodeStream(in,null,scaled); }
             if(raw==null){diagnostics.record("IMAGE_INVALID");message("Gambar tidak terbaca");return;}
             int max=Math.max(raw.getWidth(),raw.getHeight());
             float scale=Math.min(1f,1024f/max);
@@ -153,7 +165,7 @@ public final class MainActivity extends Activity {
     private void cloudOcr(){
         if(bitmap==null){message("Pilih gambar dahulu");return;}
         diagnostics.record("CLOUD_REQUEST_START");
-        String endpoint=urlInput.getText().toString().trim().replaceAll("/+$","");
+        String endpoint=WORKER_ENDPOINT;
         if(!endpoint.matches("https://[a-zA-Z0-9.-]+(?::443)?")){diagnostics.record("CLOUD_NO_URL");message("Isi URL Cloudflare HTTPS");return;}
         String key=keyInput.getText().toString().trim();
         if(key.isEmpty())try{key=new SecretStore(this).load();}catch(Exception e){message("Kunci tidak tersedia");return;}
@@ -189,7 +201,11 @@ public final class MainActivity extends Activity {
                     JSONObject resp=new JSONObject(b.toString("UTF-8"));
                     String text=resp.optString("text",""),error=resp.optString("error","");
                     runOnUiThread(()->{
-                        if(code>=400)message("AI Cloudflare: "+error+" ("+code+")");
+                        if(code>=400){
+                            if(code==502)message("AI Cloudflare belum siap (lisensi/model/kuota). OCR lokal tetap tersedia.");
+                            else if(code==401)message("Device Key tidak cocok.");
+                            else message("AI Cloudflare: "+error+" ("+code+")");
+                        }
                         else {result.setText(result.getText()+"\nAI Cloudflare:\n"+text);message("Selesai; verifikasi teks secara manual");}
                     });
                 }
@@ -198,7 +214,7 @@ public final class MainActivity extends Activity {
         });
     }
     private void checkBackend(){
-        String endpoint=urlInput.getText().toString().trim().replaceAll("/+$","");
+        String endpoint=WORKER_ENDPOINT;
         if(!endpoint.matches("https://[a-zA-Z0-9.-]+(?::443)?")){
             diagnostics.record("HEALTH_NO_URL");
             message("Masukkan URL Cloudflare HTTPS terlebih dahulu");
