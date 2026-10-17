@@ -1,4 +1,5 @@
 name: Cloudflare AI Image Smoke Test
+# Rerun after user confirmed model license acceptance 2026-10-17.
 on:
   workflow_dispatch:
   push:
