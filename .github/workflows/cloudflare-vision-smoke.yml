@@ -1,0 +1,21 @@
+name: Cloudflare AI Image Smoke Test
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cloudflare-vision-smoke.yml'
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      KATARINA_DEVICE_KEY: ${{ secrets.KATARINA_DEVICE_KEY }}
+      KATARINA_BASE_URL: https://katarina-vision-lab.alfaaulia8.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Call live Cloudflare image AI with synthetic test image
+        run: node .github/scripts/cloudflare-vision-smoke.mjs
