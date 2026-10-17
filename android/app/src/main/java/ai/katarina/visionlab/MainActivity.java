@@ -104,6 +104,9 @@ public final class MainActivity extends Activity {
         button(root,"Hybrid (lokal lalu AI bila perlu)",()->runOcr(true));
         button(root,"Coba AI Cloudflare",this::cloudOcr);
         button(root,"Salin hasil OCR",this::copyOcrText);
+        status=label("Status: pilih gambar",13);root.addView(status);
+        result=label("Hasil OCR tampil di sini",17);
+        result.setBackground(panel(Color.WHITE));result.setPadding(dp(12),dp(12),dp(12),dp(12));root.addView(result);
         root.addView(label("Hubungkan Cloudflare tanpa Device Key",19));
         pairingCodeText=label("Kode pairing: "+(pairing.pendingCode().isEmpty()?"belum dibuat":pairing.pendingCode()),18);
         pairingCodeText.setTypeface(null,Typeface.BOLD);
@@ -142,9 +145,7 @@ public final class MainActivity extends Activity {
         button(root,"Buka dashboard Worker",()->openOfficial2Captcha(CAPTCHA_WORKER,"WORKER_DASHBOARD_OPENED"));
         button(root,"Aplikasi 2Captcha Bot resmi",()->openOfficial2Captcha(CAPTCHA_ANDROID_APP,"WORKER_OFFICIAL_APP_OPENED"));
         root.addView(label("Login resmi saja. Rilis ini belum mengambil atau mengirim pekerjaan Worker berbayar secara otomatis.",12));
-        status=label("Status: pilih gambar",13);root.addView(status);
-        result=label("Hasil OCR tampil di sini",17);
-        result.setBackground(panel(Color.WHITE));result.setPadding(dp(12),dp(12),dp(12),dp(12));root.addView(result);
+
         root.addView(label("OCR lokal tidak mengunggah gambar. Cloud AI hanya dipanggil lewat tombol Cloudflare atau fallback hybrid.",12));
         root.addView(label("Laporan dapat dibaca di ringkasan Cloudflare berizin, bukan akses jarak jauh ke layar HP.",12));
         setContentView(scroll);
